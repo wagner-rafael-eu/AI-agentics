@@ -1,4 +1,5 @@
-from ai_agentics.cli import main
+"""AI-agentics package."""
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+__all__ = ["__version__"]
+
+__version__ = "0.1.0"

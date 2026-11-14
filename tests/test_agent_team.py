@@ -1,44 +1,76 @@
-import unittest
-from unittest.mock import Mock
+"""Command-line interface for AI-agentics."""
 
-from ai_agentics.agent_team import process_operator_message
+from __future__ import annotations
+
+import argparse
 
 
-class TestMqttAgentTeam(unittest.TestCase):
-    def setUp(self):
-        self.client = Mock()
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="ai-agentics",
+        description="AI-agentics command line interface.",
+    )
+    subparsers = parser.add_subparsers(dest="command")
 
-    def test_gui_sends_backend_question_over_mqtt(self):
-        process_operator_message(
-            "gui_operator",
-            {"kind": "task", "task_id": "task-1", "task": "Build a settings screen"},
-            self.client,
-        )
-        args, kwargs = self.client.publish.call_args
-        self.assertEqual(args[0], "ai_agentics/requests/backend_operator")
-        self.assertEqual(kwargs["qos"], 1)
-        self.assertIn("gui_question", args[1])
+    hello_parser = subparsers.add_parser("hello", help="say hello")
+    hello_parser.add_argument("--name", default="World", help="name to greet")
+    subparsers.add_parser("status", help="show project status")
 
-    def test_backend_replies_to_gui_and_manager_over_mqtt(self):
-        process_operator_message(
-            "backend_operator",
-            {"kind": "gui_question", "task_id": "task-2"},
-            self.client,
-        )
-        topics = [call.args[0] for call in self.client.publish.call_args_list]
-        self.assertIn("ai_agentics/feedback/gui_operator", topics)
-        self.assertIn("ai_agentics/reports/task-2", topics)
+    team_parser = subparsers.add_parser(
+        "team", help="send a task to the MQTT-connected, security-reviewed agent team"
+    )
+    team_parser.add_argument("--task", required=True, help="task for the agent team")
+    team_parser.add_argument("--mqtt-host", help="MQTT broker host (or MQTT_HOST)")
+    team_parser.add_argument("--mqtt-port", type=int, help="MQTT broker port (or MQTT_PORT)")
+    team_parser.add_argument("--timeout", type=float, default=30.0, help="report timeout in seconds")
+    team_parser.add_argument(
+        "--mqtt-authorized-ids",
+        help="comma-separated list of authorized MQTT client IDs; defaults to a CRA-aligned allow-list",
+    )
 
-    def test_gui_integrates_backend_feedback(self):
-        process_operator_message(
-            "gui_operator",
-            {"kind": "backend_feedback", "task_id": "task-3", "text": "REST API"},
-            self.client,
-        )
-        args, _ = self.client.publish.call_args
-        self.assertEqual(args[0], "ai_agentics/reports/task-3")
-        self.assertIn("gui_integrated_plan", args[1])
+    agent_parser = subparsers.add_parser("agent", help="run an MQTT operator agent")
+    agent_parser.add_argument(
+        "--role",
+        required=True,
+        choices=["gui_operator", "backend_operator", "whitelist_agent"],
+    )
+    agent_parser.add_argument("--mqtt-host", help="MQTT broker host (or MQTT_HOST)")
+    agent_parser.add_argument("--mqtt-port", type=int, help="MQTT broker port (or MQTT_PORT)")
+    agent_parser.add_argument(
+        "--mqtt-authorized-ids",
+        help="comma-separated list of authorized MQTT client IDs; defaults to a CRA-aligned allow-list",
+    )
+
+    parser.set_defaults(command="status")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.command == "hello":
+        print(f"Hello, {args.name}!")
+        return 0
+
+    if args.command in {"team", "agent"}:
+        from ai_agentics.agent_team import OperatorAgent, WhitelistAgent, broker_settings, run_manager
+
+        host, port = broker_settings(args.mqtt_host, args.mqtt_port)
+        try:
+            if args.command == "team":
+                print(run_manager(args.task, host, port, args.timeout, args.mqtt_authorized_ids))
+            elif args.role == "whitelist_agent":
+                WhitelistAgent(host, port, args.mqtt_authorized_ids).run()
+            else:
+                OperatorAgent(args.role, host, port, args.mqtt_authorized_ids).run()
+        except (OSError, TimeoutError, ValueError) as exc:
+            parser.exit(1, f"ai-agentics: {exc}\n")
+        return 0
+
+    print("AI-agentics is ready.")
+    return 0
 
 
 if __name__ == "__main__":
-    unittest.main()
+    raise SystemExit(main())

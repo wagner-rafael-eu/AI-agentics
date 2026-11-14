@@ -1,58 +1,64 @@
-# AI-agentics
+import unittest
+from unittest.mock import Mock
 
-AI-agentics is a Python 3 starter project for building agentic workflows and experiments.
+from ai_agentics.agent_team import WhitelistAgent, get_authorized_client_ids, process_operator_message
 
-## MQTT agent team
 
-The Manager, GUI operator, and backend operator communicate through an MQTT broker (Mosquitto is supported). They use MQTT topics for task requests, GUI/backend coordination, and reports; there is no in-process message bus.
+class TestMqttAgentTeam(unittest.TestCase):
+    def setUp(self):
+        self.client = Mock()
 
-Install the Python package and its MQTT client dependency:
+    def test_gui_sends_backend_question_over_mqtt(self):
+        process_operator_message(
+            "gui_operator",
+            {
+                "kind": "task",
+                "task_id": "task-1",
+                "task": "Build a settings screen",
+                "source_id": "ai-agentics-gui_operator",
+            },
+            self.client,
+        )
+        args, kwargs = self.client.publish.call_args
+        self.assertEqual(args[0], "ai_agentics/requests/backend_operator")
+        self.assertEqual(kwargs["qos"], 1)
+        self.assertIn("gui_question", args[1])
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
+    def test_backend_replies_to_gui_and_manager_over_mqtt(self):
+        process_operator_message(
+            "backend_operator",
+            {"kind": "gui_question", "task_id": "task-2", "source_id": "ai-agentics-backend_operator"},
+            self.client,
+        )
+        topics = [call.args[0] for call in self.client.publish.call_args_list]
+        self.assertIn("ai_agentics/feedback/gui_operator", topics)
+        self.assertIn("ai_agentics/reports/task-2", topics)
 
-Start a Mosquitto broker separately. The default connection is `localhost:1883`; configure a different broker with `MQTT_HOST` and `MQTT_PORT`, or pass `--mqtt-host` and `--mqtt-port` to a command.
+    def test_gui_integrates_backend_feedback(self):
+        process_operator_message(
+            "gui_operator",
+            {"kind": "backend_feedback", "task_id": "task-3", "text": "REST API", "source_id": "ai-agentics-gui_operator"},
+            self.client,
+        )
+        args, _ = self.client.publish.call_args
+        self.assertEqual(args[0], "ai_agentics/reports/task-3")
+        self.assertIn("gui_integrated_plan", args[1])
 
-In separate terminals, start both operators:
+    def test_unknown_source_id_is_rejected(self):
+        process_operator_message(
+            "backend_operator",
+            {"kind": "task", "task_id": "task-4", "task": "Add policy", "source_id": "untrusted-client"},
+            self.client,
+        )
+        args, _ = self.client.publish.call_args
+        self.assertEqual(args[0], "ai_agentics/security/denied")
+        self.assertIn("source_id_not_authorized", args[1])
 
-```bash
-python -m ai_agentics agent --role gui_operator
-python -m ai_agentics agent --role backend_operator
-```
+    def test_whitelist_agent_accepts_known_ids(self):
+        agent = WhitelistAgent("localhost", 1883, {"ai-agentics-manager"})
+        self.assertIn("ai-agentics-manager", agent.allowed_ids)
+        self.assertIn("ai-agentics-gui_operator", get_authorized_client_ids())
 
-Then submit a task with the Manager:
 
-```bash
-python -m ai_agentics team --task "Plan a settings page and its API"
-```
-
-The Manager publishes task messages, the GUI operator asks the backend operator for an API contract over MQTT, and the Manager collects the operators' reports. The current agents generate planning suggestions; they do not control a real GUI, modify backend services, or invoke external tools.
-
-## Other commands
-
-```bash
-python -m ai_agentics --help
-python -m ai_agentics hello --name "Developer"
-python -m unittest discover -s tests -v
-```
-
-## Project layout
-
-```text
-AI-agentics/
-├── README.md
-├── pyproject.toml
-├── Makefile
-├── src/
-│   └── ai_agentics/
-│       ├── __init__.py
-│       ├── __main__.py
-│       ├── agent_team.py
-│       └── cli.py
-└── tests/
-    ├── test_agent_team.py
-    └── test_cli.py
-```
+if __name__ == "__main__":
+    unittest.main()
