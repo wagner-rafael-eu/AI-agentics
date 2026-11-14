@@ -1,76 +1,182 @@
-"""Command-line interface for AI-agentics."""
+# AI-agentics
 
-from __future__ import annotations
+AI-agentics is a Python 3 project that demonstrates a coordinated multi-agent system using MQTT communication, role-based agents, and a dedicated allow-list security agent. The project is designed as an example and learning scaffold for secure message routing in agentic systems.
 
-import argparse
+## What this project contains
 
+- Manager agent: coordinates work and gathers results
+- GUI operator: plans the user-facing workflow and integrates the backend contract
+- Backend operator: defines backend responsibilities and API contract guidance
+- Whitelist agent: enforces an allow-list of authorized MQTT client IDs
+- MQTT message flow: tasks are exchanged over broker topics instead of in-memory queues
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="ai-agentics",
-        description="AI-agentics command line interface.",
-    )
-    subparsers = parser.add_subparsers(dest="command")
+## Security model
 
-    hello_parser = subparsers.add_parser("hello", help="say hello")
-    hello_parser.add_argument("--name", default="World", help="name to greet")
-    subparsers.add_parser("status", help="show project status")
+This project follows a deny-by-default pattern for MQTT access control:
 
-    team_parser = subparsers.add_parser(
-        "team", help="send a task to the MQTT-connected, security-reviewed agent team"
-    )
-    team_parser.add_argument("--task", required=True, help="task for the agent team")
-    team_parser.add_argument("--mqtt-host", help="MQTT broker host (or MQTT_HOST)")
-    team_parser.add_argument("--mqtt-port", type=int, help="MQTT broker port (or MQTT_PORT)")
-    team_parser.add_argument("--timeout", type=float, default=30.0, help="report timeout in seconds")
-    team_parser.add_argument(
-        "--mqtt-authorized-ids",
-        help="comma-separated list of authorized MQTT client IDs; defaults to a CRA-aligned allow-list",
-    )
+- each client must present an authorized identifier
+- the whitelist agent validates client IDs
+- unknown IDs are rejected with a `security_denied` message
+- all messages include a `source_id` when emitted by the service layer
+- the architecture is designed to support secure-by-default patterns and audit-friendly behavior
 
-    agent_parser = subparsers.add_parser("agent", help="run an MQTT operator agent")
-    agent_parser.add_argument(
-        "--role",
-        required=True,
-        choices=["gui_operator", "backend_operator", "whitelist_agent"],
-    )
-    agent_parser.add_argument("--mqtt-host", help="MQTT broker host (or MQTT_HOST)")
-    agent_parser.add_argument("--mqtt-port", type=int, help="MQTT broker port (or MQTT_PORT)")
-    agent_parser.add_argument(
-        "--mqtt-authorized-ids",
-        help="comma-separated list of authorized MQTT client IDs; defaults to a CRA-aligned allow-list",
-    )
+Important note:
 
-    parser.set_defaults(command="status")
-    return parser
+This is a technical model for secure architecture and does not constitute a legal certification under the EU Cyber Resilience Act (CRA). For production deployment, confirm the exact regulatory obligations and technical controls required for your product and region.
 
+## MQTT topic model
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+The current topic structure is simple and explicit:
 
-    if args.command == "hello":
-        print(f"Hello, {args.name}!")
-        return 0
+- `ai_agentics/requests/gui_operator`
+- `ai_agentics/requests/backend_operator`
+- `ai_agentics/feedback/gui_operator`
+- `ai_agentics/reports/{task_id}`
+- `ai_agentics/security/validate`
+- `ai_agentics/security/approved`
+- `ai_agentics/security/denied`
+- `ai_agentics/security/whitelist`
 
-    if args.command in {"team", "agent"}:
-        from ai_agentics.agent_team import OperatorAgent, WhitelistAgent, broker_settings, run_manager
+This makes it easy to inspect the message flow in a broker like Mosquitto.
 
-        host, port = broker_settings(args.mqtt_host, args.mqtt_port)
-        try:
-            if args.command == "team":
-                print(run_manager(args.task, host, port, args.timeout, args.mqtt_authorized_ids))
-            elif args.role == "whitelist_agent":
-                WhitelistAgent(host, port, args.mqtt_authorized_ids).run()
-            else:
-                OperatorAgent(args.role, host, port, args.mqtt_authorized_ids).run()
-        except (OSError, TimeoutError, ValueError) as exc:
-            parser.exit(1, f"ai-agentics: {exc}\n")
-        return 0
+## Default authorized MQTT client IDs
 
-    print("AI-agentics is ready.")
-    return 0
+The built-in allow-list includes:
 
+- `ai-agentics-manager`
+- `ai-agentics-gui_operator`
+- `ai-agentics-backend_operator`
+- `ai-agentics-whitelist_agent`
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+You can extend this list via:
+
+- `--mqtt-authorized-ids`
+- `MQTT_AUTHORIZED_IDS`
+
+## Quick start
+
+1. Create and activate a virtual environment:
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+2. Install the project:
+
+   ```bash
+   pip install -e .
+   ```
+
+3. Start a Mosquitto broker locally:
+
+   ```bash
+   mosquitto -v
+   ```
+
+   Default broker settings are `localhost:1883`.
+
+4. Start the whitelist agent in one terminal:
+
+   ```bash
+   python -m ai_agentics agent --role whitelist_agent
+   ```
+
+5. Start the GUI and backend operators in separate terminals:
+
+   ```bash
+   python -m ai_agentics agent --role gui_operator
+   python -m ai_agentics agent --role backend_operator
+   ```
+
+6. Submit a task from the manager:
+
+   ```bash
+   python -m ai_agentics team --task "Plan a settings page and its API"
+   ```
+
+## CLI reference
+
+### Status
+
+```bash
+python -m ai_agentics status
+```
+
+### Hello
+
+```bash
+python -m ai_agentics hello --name "Developer"
+```
+
+### Team task
+
+```bash
+python -m ai_agentics team --task "Build a dashboard" --mqtt-host localhost --mqtt-port 1883 --timeout 30
+```
+
+### Agent role
+
+```bash
+python -m ai_agentics agent --role gui_operator --mqtt-host localhost --mqtt-port 1883
+``` 
+
+The whitelist agent can also be started with:
+
+```bash
+python -m ai_agentics agent --role whitelist_agent --mqtt-authorized-ids "ai-agentics-manager,ai-agentics-gui_operator,ai-agentics-backend_operator,ai-agentics-whitelist_agent"
+```
+
+## Project layout
+
+```text
+AI-agentics/
+├── README.md
+├── pyproject.toml
+├── Makefile
+├── src/
+│   └── ai_agentics/
+│       ├── __init__.py
+│       ├── __main__.py
+│       ├── agent_team.py
+│       └── cli.py
+└── tests/
+    ├── test_agent_team.py
+    └── test_cli.py
+```
+
+## Development and testing
+
+Run the full suite:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Or use the Makefile:
+
+```bash
+make test
+```
+
+## Design notes
+
+The design intentionally keeps the example simple:
+
+- agents connect to MQTT independently
+- authorization is enforced before message processing
+- security denials are represented as explicit messages
+- the team collaborates on task planning rather than real system execution
+- the code is a safe starting point for extending into more realistic agent workflows
+
+## Current limitations
+
+This project is a demonstration and not a complete production cyber-resilience solution. Production use should include, at minimum:
+
+- TLS with client authentication
+- certificate lifecycle management
+- secure secrets handling
+- stronger identity and authorization policy enforcement
+- robust audit logging and retention
+- integration with a full compliance review and product security process
+
