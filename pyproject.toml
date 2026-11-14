@@ -5,11 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ai-agentics"
 version = "0.1.0"
-description = "Python 3 base project for AI agentic workflows"
+description = "Python 3 MQTT-connected agents for coordinated workflows"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "wagner-rafael-eu" }]
 license = { text = "MIT" }
+dependencies = ["paho-mqtt>=2.1,<3"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",

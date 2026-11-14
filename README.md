@@ -2,34 +2,42 @@
 
 AI-agentics is a Python 3 starter project for building agentic workflows and experiments.
 
-## Features
+## MQTT agent team
 
-- Python 3 project structure
-- CLI entry point via `python -m ai_agentics`
-- In-process three-agent team: Manager, GUI operator, and backend operator
-- Basic test suite setup
+The Manager, GUI operator, and backend operator communicate through an MQTT broker (Mosquitto is supported). They use MQTT topics for task requests, GUI/backend coordination, and reports; there is no in-process message bus.
 
-## Quick start
+Install the Python package and its MQTT client dependency:
 
-1. Create and activate a virtual environment:
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
 
-2. Install the project in editable mode:
-   ```bash
-   pip install -e .
-   ```
+Start a Mosquitto broker separately. The default connection is `localhost:1883`; configure a different broker with `MQTT_HOST` and `MQTT_PORT`, or pass `--mqtt-host` and `--mqtt-port` to a command.
 
-3. Try the CLI and agent team:
-   ```bash
-   python -m ai_agentics --help
-   python -m ai_agentics hello --name "Developer"
-   python -m ai_agentics team --task "Plan a settings page and its API"
-   ```
+In separate terminals, start both operators:
 
-The team communicates through an in-memory message bus. The Manager delegates the task, the GUI operator asks the backend operator about integration, and the Manager collects their plans. These are coordination examples only: the operators do not control a real GUI, execute backend changes, or invoke external services.
+```bash
+python -m ai_agentics agent --role gui_operator
+python -m ai_agentics agent --role backend_operator
+```
+
+Then submit a task with the Manager:
+
+```bash
+python -m ai_agentics team --task "Plan a settings page and its API"
+```
+
+The Manager publishes task messages, the GUI operator asks the backend operator for an API contract over MQTT, and the Manager collects the operators' reports. The current agents generate planning suggestions; they do not control a real GUI, modify backend services, or invoke external tools.
+
+## Other commands
+
+```bash
+python -m ai_agentics --help
+python -m ai_agentics hello --name "Developer"
+python -m unittest discover -s tests -v
+```
 
 ## Project layout
 
@@ -47,18 +55,4 @@ AI-agentics/
 └── tests/
     ├── test_agent_team.py
     └── test_cli.py
-```
-
-## Development
-
-Run tests:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-Or use the included shortcut:
-
-```bash
-make test
 ```
