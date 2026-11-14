@@ -15,8 +15,12 @@ def build_parser() -> argparse.ArgumentParser:
     hello_parser = subparsers.add_parser("hello", help="say hello")
     hello_parser.add_argument("--name", default="World", help="name to greet")
 
-    status_parser = subparsers.add_parser("status", help="show project status")
-    status_parser.set_defaults(command="status")
+    subparsers.add_parser("status", help="show project status")
+
+    team_parser = subparsers.add_parser(
+        "team", help="ask the Manager, GUI, and backend agents to coordinate on a task"
+    )
+    team_parser.add_argument("--task", required=True, help="task for the agent team")
 
     parser.set_defaults(command="status")
     return parser
@@ -28,6 +32,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "hello":
         print(f"Hello, {args.name}!")
+        return 0
+
+    if args.command == "team":
+        from ai_agentics.agent_team import ManagerAgent
+
+        print(ManagerAgent().run(args.task))
         return 0
 
     print("AI-agentics is ready.")
